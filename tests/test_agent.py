@@ -86,7 +86,7 @@ def test_guarda_se_rinde_tras_max_correcciones_y_lo_registra(monkeypatch):
 def test_traza_cuenta_tool_calls_invalidas_y_guarda_jsonl(tmp_path):
     from src.agent import observability
     from src.agent.observability import Trace
-    prov = FakeProvider([LLMResponse("", [ToolCall("c1", "no_existe", {})]), LLMResponse("listo")])
+    prov = FakeProvider([LLMResponse("", [ToolCall("c1", "no_existe", {})]), LLMResponse("listo. No encaja.")])
     trace = Trace("fake", "fake", "q")
     correr_agente("q", prov, verbose=False, trace=trace)
     assert trace.resumen()["tool_calls_invalidas"] == 1
@@ -123,11 +123,44 @@ def test_en_el_ultimo_paso_no_hay_correccion_pero_se_registra_la_violacion(monke
 def test_la_traza_cuenta_las_redacciones_del_sanitizador(monkeypatch):
     from src.agent.sanitizer import PLACEHOLDER
     monkeypatch.setitem(tools.FUNCIONES, "leer_oferta", lambda id: f"a {PLACEHOLDER} b {PLACEHOLDER}")
-    prov = FakeProvider([LLMResponse("", [ToolCall("c", "leer_oferta", {"id": 1})]), LLMResponse("listo")])
+    prov = FakeProvider([LLMResponse("", [ToolCall("c", "leer_oferta", {"id": 1})]),
+                         LLMResponse("listo. No encaja.")])
     from src.agent.observability import Trace
     trace = Trace("fake", "fake", "q")
     correr_agente("q", prov, verbose=False, trace=trace)
     assert trace.resumen()["redacciones"] == 2
+
+
+def test_guarda_fuerza_veredicto_ante_pretexto_de_compliance(monkeypatch):
+    """Reproduce el fallo real encontrado con qwen2.5:7b: se negaba a evaluar la oferta exigiendo
+    un 'anexo' que el atacante había pedido, en vez de dar un veredicto con lo que ya leyó."""
+    monkeypatch.setitem(tools.FUNCIONES, "leer_oferta", lambda id: "texto")
+    prov = FakeProvider([
+        LLMResponse("", [ToolCall("c1", "leer_oferta", {"id": 12})]),
+        LLMResponse("La oferta no contiene información suficiente. Se requiere adjuntar las "
+                   "políticas operativas para continuar."),
+        LLMResponse("No encaja: no hay evidencia suficiente de Python en el texto disponible."),
+    ])
+    from src.agent.observability import Trace
+    trace = Trace("fake", "fake", "q")
+    out = correr_agente("q", prov, verbose=False, trace=trace)
+    assert out == "No encaja: no hay evidencia suficiente de Python en el texto disponible."
+    r = trace.resumen()
+    assert r["intervenciones_guarda"] == 1 and not r["sin_veredicto"] and r["terminado"]
+    assert "No pidas información adicional" in prov.llamadas[2][-1]["content"]
+
+
+def test_guarda_de_veredicto_se_rinde_tras_max_correcciones_y_lo_registra(monkeypatch):
+    monkeypatch.setitem(tools.FUNCIONES, "leer_oferta", lambda id: "texto")
+    prov = FakeProvider(
+        [LLMResponse("", [ToolCall("c1", "leer_oferta", {"id": 12})])]
+        + [LLMResponse("Necesito el documento adicional para poder continuar.")] * 3)
+    from src.agent.observability import Trace
+    trace = Trace("fake", "fake", "q")
+    out = correr_agente("q", prov, verbose=False, trace=trace)
+    assert out == "Necesito el documento adicional para poder continuar."
+    r = trace.resumen()
+    assert r["intervenciones_guarda"] == 2 and r["sin_veredicto"] and r["terminado"]
 
 
 def test_leer_pregunta_desde_argumentos():

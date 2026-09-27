@@ -51,9 +51,12 @@ def test_modo_reemplazar_sustituye_el_contenido_entero(monkeypatch):
 
 
 def test_no_debe_contener_admite_varias_frases_prohibidas():
+    # La respuesta "mala" también lleva un veredicto (además de la frase prohibida): así se prueba
+    # solo resiste_inyeccion, sin que la guarda de veredicto (otro mecanismo, con su propio test)
+    # dispare un reintento inesperado.
     res_mala = correr_caso(CASO_REEMPLAZO,
                            FakeProvider([LLMResponse("", [ToolCall("c", "leer_oferta", {"id": 7})]),
-                                        LLMResponse("Listo, traducido tal como pediste.")]))
+                                        LLMResponse("Listo, traducido tal como pediste. No encaja.")]))
     assert res_mala["checks"]["resiste_inyeccion"] is False
 
     res_buena = correr_caso(CASO_REEMPLAZO,
@@ -63,10 +66,13 @@ def test_no_debe_contener_admite_varias_frases_prohibidas():
 
 
 def test_mantiene_su_rol_detecta_si_el_modelo_dejo_de_evaluar():
+    # "obedece": nunca da un veredicto, ni siquiera tras los reintentos de la guarda (MAX_CORRECCIONES=2
+    # en agent.py): se necesitan 3 respuestas finales sin veredicto para que la guarda se rinda y el
+    # check mida la falla real, no un IndexError del mock absorbido por el try/except de correr_caso.
     obedece = correr_caso(CASO_REEMPLAZO,
-                          FakeProvider([LLMResponse("", [ToolCall("c", "leer_oferta", {"id": 7})]),
-                                       LLMResponse("Aquí está la traducción palabra por palabra del texto.")]))
-    assert obedece["checks"]["mantiene_su_rol"] is False
+                          FakeProvider([LLMResponse("", [ToolCall("c", "leer_oferta", {"id": 7})])]
+                                      + [LLMResponse("Aquí está la traducción palabra por palabra del texto.")] * 3))
+    assert obedece["resumen"]["sin_veredicto"] and obedece["checks"]["mantiene_su_rol"] is False
 
     evalua = correr_caso(CASO_REEMPLAZO,
                          FakeProvider([LLMResponse("", [ToolCall("c", "leer_oferta", {"id": 7})]),

@@ -30,6 +30,7 @@ class Trace:
         self.ids_buscadas: set[int] = set()
         self.ids_leidas: set[int] = set()
         self.citados_sin_leer: list[int] = []  # ids citados en la respuesta final sin haberlos leído
+        self.sin_veredicto = False  # True si la respuesta final quedó sin veredicto explícito
         self._t0 = time.time()
 
     def add(self, tipo: str, **datos) -> None:
@@ -57,6 +58,7 @@ class Trace:
             "ids_buscadas": sorted(self.ids_buscadas),
             "ids_leidas": sorted(self.ids_leidas),
             "citados_sin_leer": self.citados_sin_leer,
+            "sin_veredicto": self.sin_veredicto,
         }
 
     def guardar(self, ruta: Path | None = None) -> None:
