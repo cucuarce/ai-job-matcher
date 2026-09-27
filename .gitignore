@@ -1,0 +1,61 @@
+# ============================================================
+# Secretos: NUNCA se suben. Solo .env.example (sin valores reales).
+# ============================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ============================================================
+# Contenido de terceros (ofertas de trabajo): no se publica
+# ============================================================
+# Dataset crudo y documentos fuente
+data/raw/
+*.docx
+
+# Artefactos derivados: los títulos de la metadata son frases copiadas de las
+# ofertas (algunas nombran empresas) y el índice FAISS son vectores de ese texto.
+# Se regeneran con: extraer_ofertas.py -> generar_embeddings.py
+data/processed/*
+!data/processed/.gitkeep
+
+# ============================================================
+# Salidas locales del agente: citan fragmentos de las ofertas
+# ============================================================
+logs/
+evals/resultados/
+
+# Tu perfil real, si lo guardás en un archivo para pasárselo al agente
+# (ver "Uso con tu perfil real" en el README): es dato personal, no se sube.
+mi_perfil*.txt
+
+# ============================================================
+# Python
+# ============================================================
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ============================================================
+# Editores y sistema operativo
+# ============================================================
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Claude Code: configuración y permisos locales
+.claude/
