@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+# Sin esto, "pytest" a secas (a diferencia de "python -m pytest") no agrega la raíz
+# del repo al sys.path, y conftest.py falla con "ModuleNotFoundError: No module named 'src'".
+# Portable: aplica sin importar cómo se invoque pytest (consola, CI, IDE).
+pythonpath = ["."]

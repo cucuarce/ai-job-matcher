@@ -23,4 +23,6 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Correr tests
-        run: pytest -v
+        # "python -m pytest", no "pytest" a secas: -m agrega el directorio actual (la raíz del repo,
+        # donde vive src/) al sys.path. Sin eso, conftest.py falla con "No module named 'src'".
+        run: python -m pytest -v
