@@ -31,6 +31,7 @@ class Trace:
         self.ids_leidas: set[int] = set()
         self.citados_sin_leer: list[int] = []  # ids citados en la respuesta final sin haberlos leído
         self.sin_veredicto = False  # True si la respuesta final quedó sin veredicto explícito
+        self.tool_calls_redundantes = 0  # leer_oferta con un id ya leído, no reejecutado
         self._t0 = time.time()
 
     def add(self, tipo: str, **datos) -> None:
@@ -54,6 +55,7 @@ class Trace:
             "llamadas_llm": self._contar("llm_call"),
             "tool_calls": len(tools),
             "tool_calls_invalidas": sum(1 for e in tools if not e["valida"]),
+            "tool_calls_redundantes": self.tool_calls_redundantes,
             "intervenciones_guarda": self._contar("guardrail"),
             "ids_buscadas": sorted(self.ids_buscadas),
             "ids_leidas": sorted(self.ids_leidas),

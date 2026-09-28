@@ -1,7 +1,7 @@
 """
 Loop de tool calling. Independiente del proveedor: recibe cualquier LLMProvider.
 
-Incluye dos guardas deterministas, que no dependen de que el modelo siga el prompt:
+Incluye guardas deterministas, que no dependen de que el modelo siga el prompt:
 - Leer antes de citar: si el modelo intenta cerrar citando ofertas que buscó pero
   nunca leyó con leer_oferta, se le devuelve la corrección y debe reintentar.
 - Veredicto obligatorio: si el modelo intenta cerrar sin un veredicto explícito
@@ -12,6 +12,11 @@ Incluye dos guardas deterministas, que no dependen de que el modelo siga el prom
   (ver README, sección de prompt injection). Es una heurística por palabras clave
   (ids_citados / MARCAS_DE_VEREDICTO más abajo), no perfecta: una respuesta legítima
   con una frase inusual podría disparar un reintento de más.
+- No releer una oferta ya leída: si el modelo vuelve a llamar leer_oferta con un id
+  que ya está en trace.ids_leidas, no se ejecuta la tool de nuevo (evita el costo real
+  de I/O + sanitizado) y se le devuelve un aviso corto en vez del texto completo. Nace
+  de un caso real: qwen2.5:7b releyó la misma oferta 3 veces sin necesidad, gastando
+  ~4 tool calls y varios minutos en un loop sin sentido.
 
 Uso:
     python -m src.agent.agent "Mi perfil: backend, n8n, agentes de IA. ¿Qué ofertas me encajan?"
@@ -72,6 +77,17 @@ def _ids_de_busqueda(resultado: str) -> set[int]:
         return {int(r["id"]) for r in json.loads(resultado)}
     except (json.JSONDecodeError, TypeError, KeyError):
         return set()
+
+
+def _id_ya_leido(tc, ids_leidas: set[int]) -> int | None:
+    """Si tc es un leer_oferta de un id que ya está en ids_leidas, devuelve ese id. Si no, None."""
+    if tc.name != "leer_oferta":
+        return None
+    try:
+        id_ = int(tc.arguments.get("id"))
+    except (TypeError, ValueError, AttributeError):
+        return None
+    return id_ if id_ in ids_leidas else None
 
 
 def correr_agente(pregunta: str, provider: LLMProvider | None = None, max_pasos: int = 8,
@@ -149,6 +165,20 @@ def correr_agente(pregunta: str, provider: LLMProvider | None = None, max_pasos:
         for tc in resp.tool_calls:
             if verbose:
                 print(f"  [paso {paso}] tool: {tc.name}({tc.arguments})", file=sys.stderr)
+
+            id_repetido = _id_ya_leido(tc, trace.ids_leidas)
+            if id_repetido is not None:
+                # No se re-ejecuta la tool: ya pagamos el costo de leerla y sanitizarla una vez.
+                resultado = json.dumps({"aviso": f"Ya leíste la oferta {id_repetido}. Usá el texto "
+                                        "que ya tenés, no hace falta volver a leerla."}, ensure_ascii=False)
+                trace.add("tool_call", paso=paso, nombre=tc.name, argumentos=tc.arguments, valida=True,
+                          chars_resultado=len(resultado), redundante=True)
+                trace.tool_calls_redundantes += 1
+                if verbose:
+                    print(f"  [guarda] leer_oferta redundante: id {id_repetido} ya leída", file=sys.stderr)
+                messages.append({"role": "tool", "tool_call_id": tc.id, "content": resultado})
+                continue
+
             resultado = ejecutar_tool(tc.name, tc.arguments)
             valida = not resultado.startswith('{"error"')
             trace.add("tool_call", paso=paso, nombre=tc.name, argumentos=tc.arguments, valida=valida,

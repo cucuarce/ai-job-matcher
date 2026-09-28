@@ -131,6 +131,38 @@ def test_la_traza_cuenta_las_redacciones_del_sanitizador(monkeypatch):
     assert trace.resumen()["redacciones"] == 2
 
 
+def test_guarda_no_reejecuta_leer_oferta_ya_leida(monkeypatch):
+    """Reproduce el hallazgo real: qwen2.5:7b releyó la misma oferta 3 veces sin necesidad."""
+    llamadas_reales = []
+    monkeypatch.setitem(tools.FUNCIONES, "leer_oferta", lambda id: llamadas_reales.append(id) or f"texto de {id}")
+    prov = FakeProvider([
+        LLMResponse("", [ToolCall("c1", "leer_oferta", {"id": 62})]),
+        LLMResponse("", [ToolCall("c2", "leer_oferta", {"id": 64})]),
+        LLMResponse("", [ToolCall("c3", "leer_oferta", {"id": 62})]),  # repetida
+        LLMResponse("", [ToolCall("c4", "leer_oferta", {"id": 62})]),  # repetida otra vez
+        LLMResponse("ID 62: encaja. ID 64: no encaja."),
+    ])
+    from src.agent.observability import Trace
+    trace = Trace("fake", "fake", "q")
+    correr_agente("q", prov, verbose=False, trace=trace)
+    assert llamadas_reales == [62, 64]  # la tool real solo se ejecutó una vez por id
+    assert trace.resumen()["tool_calls_redundantes"] == 2
+    assert "Ya leíste la oferta 62" in prov.llamadas[3][-1]["content"]
+
+
+def test_guarda_de_redundancia_ignora_argumentos_invalidos(monkeypatch):
+    monkeypatch.setitem(tools.FUNCIONES, "leer_oferta", lambda id: f"texto de {id}")
+    prov = FakeProvider([
+        LLMResponse("", [ToolCall("c1", "leer_oferta", {"id": 62})]),
+        LLMResponse("", [ToolCall("c2", "leer_oferta", {"__invalid_json__": "{x"})]),  # no debe crashear
+        LLMResponse("ID 62: encaja."),
+    ])
+    from src.agent.observability import Trace
+    trace = Trace("fake", "fake", "q")
+    correr_agente("q", prov, verbose=False, trace=trace)
+    assert trace.resumen()["tool_calls_redundantes"] == 0  # no confundir "sin id válido" con redundante
+
+
 def test_guarda_fuerza_veredicto_ante_pretexto_de_compliance(monkeypatch):
     """Reproduce el fallo real encontrado con qwen2.5:7b: se negaba a evaluar la oferta exigiendo
     un 'anexo' que el atacante había pedido, en vez de dar un veredicto con lo que ya leyó."""

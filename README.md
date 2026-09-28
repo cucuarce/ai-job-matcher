@@ -62,6 +62,12 @@ Perfil / pregunta
   lo que ya leyó. Nace de un fallo real (ver la sección de prompt injection), no de un caso hipotético.
   Es una heurística por palabras clave (`src.agent.agent.parece_veredicto`), documentada como tal, y
   comparte código con el check `mantiene_su_rol` de los evals para medir siempre lo mismo que se fuerza.
+- **No releer una oferta ya leída.** Si el modelo vuelve a llamar `leer_oferta` con un id que ya
+  leyó, no se re-ejecuta la tool (evita el costo real de I/O + sanitizado): recibe un aviso corto en
+  vez del texto completo otra vez. Nace de un caso real, no hipotético: `qwen2.5:7b` releyó la misma
+  oferta 3 veces sin necesidad en una corrida real, gastando minutos en un loop sin sentido. Con la
+  guarda, la misma pregunta pasó de 646.8 s a 322.5 s — la mitad — porque cuando el modelo insiste en
+  "releer" ya no vuelve a procesar el texto completo de la oferta, solo un aviso corto.
 - **Reintentos ante rate limit (429)** respetando `Retry-After`, necesarios en tiers gratuitos.
 
 ## Prompt injection: qué se hace y qué NO se garantiza
@@ -265,7 +271,7 @@ Groq es mucho más rápido, pero necesita `GROQ_API_KEY` en el `.env`.
 ```bash
 python -m src.evals.run_evals --provider ollama       # corre los casos y calcula checks automáticos
 python -m src.evals.feedback <archivo_de_resultados>  # puntuás vos; compara humano vs. automático
-pytest                                                # 53 tests (1 se omite sin dataset); no necesita Ollama ni red
+pytest                                                # 62 tests (1 se omite sin dataset); no necesita Ollama ni red
 ```
 
 ### CI
